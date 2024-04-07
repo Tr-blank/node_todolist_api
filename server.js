@@ -1,120 +1,89 @@
 const http = require('http');
 const { v4: uuidv4 } = require("uuid");
-const errHandle = require("./errorHandle");
+const { errorMessages, errorResHandle } = require("./errorHandle"); // 微調 新增 module：將多個檔案都會用上的 headers 設定抽出一個新的 module
+const headers = require('./headersSetting'); // 微調 新增 module：將多個檔案都會用上的 headers 設定抽出一個新的 module
 const todos = [];
 
-const requestListener = (req, res) => {
-  const headers = {
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Content-Length, X-Requested-With',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'PATCH, POST, GET,OPTIONS,DELETE',
-    'Content-Type': 'application/json',
-  };
+const successResHandle = (res, hasSendData) => { // 微調 新增 function：將重複的 code 抽出寫成 function
+  const successRes = JSON.stringify({
+    status: 'success',
+    data: todos,
+  });
+  res.writeHead(200, headers);
+  if (hasSendData) res.write(successRes)
+  res.end();
+}
 
+const requestListener = (req, res) => {
   let body = "";
   req.on("data", (chunk) => {
     body += chunk; //將封包 Buffer 分次搬運組成資料
   });
+  
+  if (req.method === "OPTIONS") { // 微調 if判斷：先確認不是(CORS) OPTIONS 請求後，再去判斷 URL
+    successResHandle(res, false)
+  } else if (req.url === '/todos') {
+    switch (req.method) {  // 微調 換成 switch-case 判斷 method：方便瀏覽 code
 
-  if (req.method == 'GET' && req.url === '/todos') {
-    res.writeHead(200, headers);
-    res.write(
-      JSON.stringify({
-        status: "success",
-        data: todos,
-      })
-    );
-    res.end();
-  } else if (req.method == "POST" && req.url == "/todos") {
-    req.on("end", () => {
-      try {
-        const title = JSON.parse(body).title;
-        // 微調 if判斷：title 如是 null, undefined, 空字串...等等都視為錯誤，將對應的錯誤訊息丟到 catch error
-        if(!title) throw 'key-value error'
-        const todo = {
-          title: title,
-          id: uuidv4(),
-        };
-        todos.push(todo);
-        res.writeHead(200, headers);
-        res.write(
-          JSON.stringify({
-            status: "success",
-            data: todos
-          })
-        );
-        res.end();
-      } catch (error) {
-        // 微調 errHandle 增加參數：將錯誤訊息也傳進 errHandle
-        errHandle(res, error);
-      }
-    });
-  } else if (req.method == "DELETE" && req.url == "/todos") {
-    todos.length = 0; // 清除所有內容
-    res.writeHead(200, headers);
-    res.write(
-      JSON.stringify({
-        status: "success",
-        data: todos,
-      })
-    );
-    res.end();
-  } else if (req.method == "DELETE" && req.url.startsWith("/todos/")) {
-    try {
-      const id = req.url.split("/").pop();
-      const index = todos.findIndex((element) => element.id == id);
-      // 微調 if判斷：當 index 是 -1 指定的 ID 不存在時，將對應的錯誤訊息丟到 catch error
-      if(index === -1) throw 'ID not found'
-      todos.splice(index, 1);
-      res.writeHead(200, headers);
-      res.write(
-        JSON.stringify({
-          status: "success",
-          data: todos,
-        })
-      );
-      res.end();
-    } catch (error) {
-      // 微調 errHandle 增加參數：將錯誤訊息也傳進 errHandle
-      errHandle(res, error);
+      case 'GET':
+        successResHandle(res, true)
+        break;
+
+      case 'POST':
+        req.on("end", () => {
+          try {
+            const title = JSON.parse(body).title;
+            if(!title) throw errorMessages.wrongKeyValue // 微調 if判斷：title 如是 null, undefined, 空字串...等等都視為錯誤，將對應的錯誤訊息丟到 catch error
+            const todo = {
+              title: title,
+              id: uuidv4(),
+            };
+            todos.push(todo);
+            successResHandle(res, true)
+          } catch (error) {
+            errorResHandle(res, 400, error); // 微調 errorHandle 改名及增加參數：將錯誤碼及訊息也傳進 errorResHandle
+          }
+        });
+        break;
+
+      case 'DELETE':
+        todos.length = 0; // 清除所有內容
+        successResHandle(res, true)
+        break;
     }
-  } else if (req.method == "PATCH" && req.url.startsWith("/todos/")) {
-    req.on("end", () => {
-      try {
-        const title = JSON.parse(body).title;
-        const id = req.url.split("/").pop();
-        const index = todos.findIndex((element) => element.id == id);
-        // 微調 if判斷：title 如是 null, undefined, 空字串...等等都視為錯誤，將對應的錯誤訊息丟到 catch error
-        if(!title) throw 'key-value error'
-        // 微調 if判斷：當 index 是 -1 指定的 ID 不存在時，將對應的錯誤訊息丟到 catch error
-        if(index === -1) throw 'ID not found'
-        todos[index].title = title;
-        res.writeHead(200, headers);
-        res.write(
-          JSON.stringify({
-            status: "success",
-            data: todos,
-          })
-        );
-        res.end();
-      } catch (error) {
-        // 微調 errHandle 增加參數：將錯誤訊息也傳進 errHandle
-        errHandle(res, error);
-      }
-    });
-  } else if (req.method == "OPTIONS") {
-    // 應對CORS
-    res.writeHead(200, headers);
-    res.end();
+  } else if (req.url.startsWith("/todos/")) {
+    switch (req.method) {
+
+      case 'DELETE':
+        try {
+          const id = req.url.split("/").pop();
+          const index = todos.findIndex((element) => element.id == id);
+          if(index === -1) throw errorMessages.notfoundID // 微調 if判斷：當 index 是 -1 指定的 ID 不存在時，將對應的錯誤訊息丟到 catch error
+          todos.splice(index, 1);
+          successResHandle(res, true)
+        } catch (error) {
+          errorResHandle(res, 400, error);
+        }
+        break;
+
+      case 'PATCH':
+        req.on("end", () => {
+          try {
+            const title = JSON.parse(body).title;
+            const id = req.url.split("/").pop();
+            const index = todos.findIndex((element) => element.id == id);
+            if(!title) throw errorMessages.wrongKeyValue
+            if(index === -1) throw errorMessages.notfoundID
+            todos[index].title = title;
+            successResHandle(res, true)
+          } catch (error) {
+            errorResHandle(res, 400, error);
+          }
+        });
+        break;
+    }
   } else {
-    res.writeHead(404, headers);
-    res.write(
-      JSON.stringify({
-        status: "404",
-        message: "無此網站路由",
-      })
-    );
-    res.end();
+    errorResHandle(res, 404, errorMessages.notfoundRouter);
   }
 };
 
