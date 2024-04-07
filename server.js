@@ -6,8 +6,9 @@ const todos = [];
 
 const successResHandle = (res, hasSendData) => { // 微調 新增 function：將重複的 code 抽出寫成 function
   const successRes = JSON.stringify({
-    status: 'success',
     data: todos,
+    status: 200,
+    message: 'success 成功'
   });
   res.writeHead(200, headers);
   if (hasSendData) res.write(successRes)

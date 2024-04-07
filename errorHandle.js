@@ -9,7 +9,7 @@ const errorMessages = {
 
 const errorResHandle = (res, status, msg) => {
   const message = typeof msg === 'string' ? msg : errorMessages.invalidJson;
-  res.writeHead(400, headers);
+  res.writeHead(status, headers);
   res.write(JSON.stringify({ status, message }));
   res.end();
 }
